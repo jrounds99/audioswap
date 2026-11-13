@@ -24,5 +24,8 @@ internal interface ISettingsHost
 
     void PreviewPopup(AppConfig settings, bool withProblem);
 
+    /// <summary>Plays an output device's sound on that device, without switching anything.</summary>
+    void PreviewSound(DeviceSound sound);
+
     void Quit();
 }

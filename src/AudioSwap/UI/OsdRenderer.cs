@@ -33,6 +33,7 @@ internal static class OsdRenderer
     // Layout in 96-DPI pixels.
     const float Shadow = 20, Pad = 16, Radius = 14, MarkSize = 20, HeaderHeight = 22;
     const float RowHeight = 44, RowGap = 6, Bubble = 34, MinWidth = 320, MaxWidth = 460;
+    const float WarningHeight = 20, WarningIcon = 24;
 
     public static Bitmap Render(OsdContent content, float scale)
     {
@@ -53,6 +54,8 @@ internal static class OsdRenderer
             textWidth = Math.Max(textWidth, measure.MeasureString(row.DeviceName, nameFont).Width + S(Bubble + 12 + 28));
         if (content.Message is not null)
             textWidth = Math.Max(textWidth, Math.Min(measure.MeasureString(content.Message, messageFont).Width, S(MaxWidth - 2 * Pad)));
+        if (content.Warning is not null)
+            textWidth = Math.Max(textWidth, measure.MeasureString(content.Warning, messageFont).Width + S(WarningIcon));
         float cardW = Math.Clamp(textWidth + S(2 * Pad), S(MinWidth), S(MaxWidth));
         float contentW = cardW - S(2 * Pad);
 
@@ -64,6 +67,7 @@ internal static class OsdRenderer
         float cardH = S(Pad) + S(HeaderHeight)
             + (messageH > 0 ? S(8) + messageH : 0)
             + (rowsH > 0 ? S(12) + 1 + S(10) + rowsH : 0)
+            + (content.Warning is not null ? S(10) + S(WarningHeight) : 0)
             + S(Pad);
 
         int width = (int)Math.Ceiling(cardW + 2 * S(Shadow));
@@ -128,6 +132,14 @@ internal static class OsdRenderer
                     nameFont, captionFont, glyphFont, statusFont);
                 y += S(RowHeight) + S(RowGap);
             }
+        }
+
+        if (content.Warning is not null)
+        {
+            y += content.Rows.Count > 0 ? S(10) - S(RowGap) : S(10);
+            var icon = new RectangleF(x, y, S(WarningIcon) - S(6), S(WarningHeight));
+            Glyphs.Draw(g, Glyphs.Warning, statusFont, c.Warning, icon);
+            DrawText(g, content.Warning, messageFont, c.Warning, new RectangleF(x + S(WarningIcon), y, contentW - S(WarningIcon), S(WarningHeight)));
         }
 
         return bitmap;

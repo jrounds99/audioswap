@@ -12,6 +12,8 @@ internal static class Glyphs
     public const string Warning = "";
     public const string Error = "";
     public const string Info = "";
+    public const string Sound = "";
+    public const string Play = "";
 
     public static string Family { get; } = PickFamily();
 

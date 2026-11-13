@@ -6,7 +6,7 @@ namespace AudioSwap.UI;
 
 /// <summary>
 /// The switch popup: a layered, click-through, never-focused window that fades and
-/// slides in, holds, then fades out. It sits on the monitor you're working on.
+/// slides in, holds, then fades out, on the chosen display (by default the one you're working on).
 /// </summary>
 internal sealed class OsdWindow : Form
 {
@@ -45,9 +45,9 @@ internal sealed class OsdWindow : Form
 
     protected override bool ShowWithoutActivation => true;
 
-    public void ShowContent(OsdContent content, PopupPosition position, double seconds)
+    public void ShowContent(OsdContent content, PopupPosition position, string? display, double seconds)
     {
-        var screen = TargetScreen();
+        var screen = Displays.Resolve(display);
         _scale = DpiOf(screen) / 96f;
 
         using (var frame = OsdRenderer.Render(content, _scale))
@@ -145,12 +145,6 @@ internal sealed class OsdWindow : Form
         };
     }
 
-    static Screen TargetScreen()
-    {
-        var foreground = GetForegroundWindow();
-        return foreground != IntPtr.Zero ? Screen.FromHandle(foreground) : Screen.PrimaryScreen!;
-    }
-
     static int DpiOf(Screen screen)
     {
         var center = new POINT(screen.Bounds.Left + screen.Bounds.Width / 2, screen.Bounds.Top + screen.Bounds.Height / 2);
@@ -193,7 +187,6 @@ internal sealed class OsdWindow : Form
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
     [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
     [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
 

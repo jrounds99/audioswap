@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Win32;
 using AudioSwap.Audio;
 using AudioSwap.Config;
 using AudioSwap.Hotkeys;
@@ -13,7 +14,9 @@ namespace AudioSwap.UI;
 internal sealed class SettingsForm : ThemedForm
 {
     static readonly object CycleKey = new();
+    static readonly object ChooseFileItem = new();
     static readonly double[] Durations = [1, 1.5, 2, 2.5, 3, 4, 5, 7, 10];
+    const string SoundFileFilter = "Sounds and videos|*.wav;*.mp3;*.m4a;*.aac;*.wma;*.flac;*.mp4;*.m4v;*.mov;*.wmv|All files|*.*";
     const TextFormatFlags ItemText = TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix
         | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding;
 
@@ -44,8 +47,12 @@ internal sealed class SettingsForm : ThemedForm
     readonly DropDown _input = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right };
     readonly ToggleSwitch _comms = new("Also set as the communications device");
     readonly FluentButton _try = new("Switch now", "");
+    readonly DropDown _sound = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right };
+    readonly DropDown _volume = new() { Width = 130 };
+    readonly FluentButton _playSound = new("", Glyphs.Play, FluentButton.Kind.Subtle, "Play the sound");
 
     readonly DropDown _popupMode = new() { Width = 250 };
+    readonly DropDown _display = new() { Width = 250 };
     readonly DropDown _position = new() { Width = 250 };
     readonly DropDown _seconds = new() { Width = 130 };
     readonly FluentButton _preview = new("Preview", "");
@@ -68,8 +75,8 @@ internal sealed class SettingsForm : ThemedForm
         Text = "AudioSwap";
         Icon = AppIcon.Load(new Size(32, 32));
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(920, 720);
-        MinimumSize = new Size(860, 700);
+        ClientSize = new Size(920, 800);
+        MinimumSize = new Size(860, 780);
         Padding = new Padding(24, 18, 24, 18);
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Margin = Padding.Empty };
@@ -100,6 +107,7 @@ internal sealed class SettingsForm : ThemedForm
 
         _host.HotkeyProblemsChanged += OnHostProblemsChanged;
         OnHostProblemsChanged(this, EventArgs.Empty);
+        SystemEvents.DisplaySettingsChanged += OnDisplaysChanged;
     }
 
     Profile? Selected => _list.SelectedItem as Profile;
@@ -125,6 +133,7 @@ internal sealed class SettingsForm : ThemedForm
         _outputs = _devices(DeviceFlow.Output);
         _inputs = _devices(DeviceFlow.Input);
         LoadDeviceLists();
+        LoadSound();
         _list.Invalidate();
     }
 
@@ -183,6 +192,22 @@ internal sealed class SettingsForm : ThemedForm
         {
             Margin = new Padding(52, 0, 0, 6),
         });
+
+        var sound = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Dock = DockStyle.Fill, Margin = new Padding(0, 5, 0, 5) };
+        sound.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        sound.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        sound.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _sound.Margin = new Padding(0, 0, 8, 0);
+        _volume.Margin = new Padding(0, 0, 4, 0);
+        _playSound.Margin = Padding.Empty;
+        sound.Controls.Add(_sound, 0, 0);
+        sound.Controls.Add(_volume, 1, 0);
+        sound.Controls.Add(_playSound, 2, 0);
+        AddRow(_editor, "Sound", sound);
+        AddRow(_editor, "", new ThemedLabel("Saved with this output. Plays whenever it's picked, even if it's on.", ThemedLabel.Style.Caption)
+        {
+            Margin = new Padding(0, 0, 0, 6),
+        });
         AddRow(_editor, "", MakeFlow(12, _try,
             new ThemedLabel("Choose “No change” to leave a device as it is.", ThemedLabel.Style.Secondary)));
         _editor.RowCount++;
@@ -195,23 +220,33 @@ internal sealed class SettingsForm : ThemedForm
     {
         var card = new Card { AutoSize = true, Margin = Padding.Empty, Padding = new Padding(20, 14, 20, 14) };
         var columns = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
-        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
-        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48));
 
         var popup = MakeGrid(2);
         AddRow(popup, "Show popup", _popupMode);
+        AddRow(popup, "Display", _display);
         AddRow(popup, "Position", _position);
         AddRow(popup, "Duration", MakeFlow(8, _seconds, _preview));
-        AddRow(popup, "Cycle hotkey", MakeFlow(12, _cycleFrame, _cycleStatus));
         columns.Controls.Add(popup, 0, 0);
 
-        var app = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(16, 0, 0, 0) };
+        var app = MakeGrid(2);
+        app.Margin = new Padding(16, 0, 0, 0);
+        AddRow(app, "Cycle hotkey", _cycleFrame);
+        _cycleStatus.Margin = new Padding(0, 0, 0, 4);
+        AddRow(app, "", _cycleStatus);
+        void AddWide(Control control)
+        {
+            int row = app.RowCount++;
+            app.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            AddSpanning(app, control, row);
+        }
         foreach (var toggle in new[] { _startup, _minimizeToTray, _showTray })
         {
             toggle.Margin = new Padding(0, 4, 0, 4);
-            app.Controls.Add(toggle);
+            AddWide(toggle);
         }
-        app.Controls.Add(new ThemedLabel("When hidden, open AudioSwap again to get back here.", ThemedLabel.Style.Caption)
+        AddWide(new ThemedLabel("When hidden, open AudioSwap again to get back here.", ThemedLabel.Style.Caption)
         {
             Margin = new Padding(52, 0, 0, 0),
         });
@@ -303,7 +338,11 @@ internal sealed class SettingsForm : ThemedForm
             CheckHotkey(p, p.Hotkey);
         });
         _hotkeyFrame.Cleared += (_, _) => _hotkey.Hotkey = null;
-        _output.SelectedIndexChanged += (_, _) => Edit(p => p.Output = _output.SelectedItem?.Value as DeviceRef);
+        _output.SelectedIndexChanged += (_, _) =>
+        {
+            Edit(p => p.Output = _output.SelectedItem?.Value as DeviceRef);
+            LoadSound(); // the sound row shows the new device's sound
+        };
         _input.SelectedIndexChanged += (_, _) => Edit(p => p.Input = _input.SelectedItem?.Value as DeviceRef);
         _comms.CheckedChanged += (_, _) => Edit(p => p.IncludeCommunications = _comms.Checked);
         _try.Click += (_, _) =>
@@ -312,8 +351,25 @@ internal sealed class SettingsForm : ThemedForm
             FlushSave();
             _host.TryProfile(p);
         };
+        _sound.SelectedIndexChanged += (_, _) => OnSoundChosen();
+        _volume.SelectedIndexChanged += (_, _) =>
+        {
+            if (_loading || CurrentSound() is not { } sound) return;
+            sound.Volume = (int)_volume.SelectedItem!.Value!;
+            QueueSave();
+            PreviewSound();
+        };
+        _playSound.Click += (_, _) => PreviewSound();
 
         _popupMode.SelectedIndexChanged += (_, _) => EditGeneral(c => c.PopupMode = (PopupMode)_popupMode.SelectedItem!.Value!);
+        _display.SelectedIndexChanged += (_, _) =>
+        {
+            if (_loading) return;
+            EditGeneral(c => c.PopupDisplay = _display.SelectedItem?.Value as string);
+            // Show it there straight away: the quickest way to tell identical monitors apart.
+            FlushSave();
+            _host.PreviewPopup(_config, false);
+        };
         _position.SelectedIndexChanged += (_, _) => EditGeneral(c => c.PopupPosition = (PopupPosition)_position.SelectedItem!.Value!);
         _seconds.SelectedIndexChanged += (_, _) => EditGeneral(c => c.PopupSeconds = (double)_seconds.SelectedItem!.Value!);
         _preview.Click += (_, _) =>
@@ -378,6 +434,7 @@ internal sealed class SettingsForm : ThemedForm
             new(PopupPosition.TopCenter, "Top center"),
             new(PopupPosition.Center, "Center"),
         ], (int)_config.PopupPosition);
+        LoadDisplays();
 
         var seconds = Durations.Contains(_config.PopupSeconds) ? Durations : [.. Durations, _config.PopupSeconds];
         Array.Sort(seconds);
@@ -401,6 +458,7 @@ internal sealed class SettingsForm : ThemedForm
         _comms.Checked = p?.IncludeCommunications ?? true;
         _loading = false;
         LoadDeviceLists();
+        LoadSound();
         UpdateStatus();
         int index = _list.SelectedIndex;
         _copy.Enabled = _remove.Enabled = p is not null;
@@ -430,6 +488,112 @@ internal sealed class SettingsForm : ThemedForm
             items.Add(new DropDownItem(current, $"{current.Name} (not connected)", IsWarning: true));
         }
         list.SetItems(items, selected);
+    }
+
+    void LoadDisplays()
+    {
+        var chosen = _config.PopupDisplay;
+        var items = new List<DropDownItem> { new(null, "Follow the active window"), new(Displays.Primary, "Main display") };
+        int selected = chosen == Displays.Primary ? 1 : 0;
+        foreach (var display in Displays.GetAll())
+        {
+            if (string.Equals(display.Id, chosen, StringComparison.OrdinalIgnoreCase)) selected = items.Count;
+            items.Add(new DropDownItem(display.Id, display.Name));
+        }
+        if (chosen is not null && chosen != Displays.Primary && selected == 0)
+        {
+            selected = items.Count;
+            items.Add(new DropDownItem(chosen, "Saved display (not connected)", IsWarning: true));
+        }
+        _display.SetItems(items, selected);
+    }
+
+    void OnDisplaysChanged(object? sender, EventArgs e)
+    {
+        if (!IsDisposed) BeginInvoke(LoadDisplays);
+    }
+
+    /// <summary>The sound saved for the selected profile's output device; it's shared by every profile that uses the device.</summary>
+    DeviceSound? CurrentSound() => _config.SoundFor(Selected?.Output, _outputs);
+
+    void LoadSound()
+    {
+        bool hasOutput = Selected?.Output is not null;
+        var entry = CurrentSound();
+        var current = entry?.Sound;
+        _sound.Enabled = hasOutput;
+        if (!hasOutput)
+        {
+            _sound.SetItems([new(null, "Pick an output device first")], 0);
+            _volume.SetItems([new(80, "Volume 80%")], 0);
+            _volume.Enabled = _playSound.Enabled = false;
+            return;
+        }
+
+        var items = new List<DropDownItem> { new(null, "No sound") };
+        int selected = 0;
+        foreach (var sound in BuiltInSounds.All)
+        {
+            if (string.Equals(sound.Ref, current, StringComparison.OrdinalIgnoreCase)) selected = items.Count;
+            items.Add(new DropDownItem(sound.Ref, sound.Name));
+        }
+        if (current is not null && BuiltInSounds.Find(current) is null)
+        {
+            selected = items.Count;
+            bool exists = File.Exists(current);
+            items.Add(new DropDownItem(current, exists ? Path.GetFileName(current) : $"{Path.GetFileName(current)} (not found)", IsWarning: !exists));
+        }
+        items.Add(new DropDownItem(ChooseFileItem, "Choose a file…"));
+        _sound.SetItems(items, selected);
+
+        int volume = entry?.Volume ?? 80;
+        var volumes = Enumerable.Range(1, 10).Select(v => v * 10).Append(volume).Distinct().Order().ToList();
+        _volume.SetItems(volumes.Select(v => new DropDownItem(v, $"Volume {v}%")), volumes.IndexOf(volume));
+        _volume.Enabled = _playSound.Enabled = current is not null;
+    }
+
+    void OnSoundChosen()
+    {
+        if (_loading || Selected is null) return;
+        var value = _sound.SelectedItem?.Value;
+        if (value == ChooseFileItem)
+        {
+            BeginInvoke(ChooseSoundFile); // once the list has closed
+            return;
+        }
+        SetSound(value as string);
+    }
+
+    void ChooseSoundFile()
+    {
+        using var dialog = new OpenFileDialog { Title = "Choose a sound", Filter = SoundFileFilter };
+        dialog.InitialDirectory = CurrentSound()?.Sound is { } current && File.Exists(current)
+            ? Path.GetDirectoryName(current)
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+        if (dialog.ShowDialog(this) == DialogResult.OK) SetSound(dialog.FileName);
+        else LoadSound(); // puts the previous choice back
+    }
+
+    /// <summary>Sets (or with null, removes) the sound of the selected profile's output device, then plays it.</summary>
+    void SetSound(string? sound)
+    {
+        if (Selected?.Output is not { } device) return;
+        var entry = CurrentSound();
+        if (sound is null)
+        {
+            if (entry is not null) _config.DeviceSounds.Remove(entry);
+        }
+        else if (entry is null) _config.DeviceSounds.Add(new DeviceSound { Device = device, Sound = sound });
+        else entry.Sound = sound;
+        _list.Invalidate();
+        QueueSave();
+        LoadSound();
+        PreviewSound();
+    }
+
+    void PreviewSound()
+    {
+        if (CurrentSound() is { } sound) _host.PreviewSound(sound);
     }
 
     void Edit(Action<Profile> change)
@@ -545,6 +709,7 @@ internal sealed class SettingsForm : ThemedForm
     {
         _hotkeyStatus.Text = Selected is { } p && _problems.TryGetValue(p, out var message) ? message : "";
         _cycleStatus.Text = _problems.TryGetValue(CycleKey, out var cycle) ? cycle : "";
+        _cycleStatus.Visible = _cycleStatus.Text.Length > 0;
     }
 
     #endregion
@@ -596,6 +761,15 @@ internal sealed class SettingsForm : ThemedForm
         var text = selected ? p.SubtleText : p.Text;
 
         int capsWidth = DrawKeycaps(g, profile.Hotkey, _problems.ContainsKey(profile), new Rectangle(content.X, content.Y, content.Width, line), fill);
+        if (_config.SoundFor(profile.Output, _outputs) is { } sound)
+        {
+            // A note before the keycaps: this profile's output plays a sound (amber if its file is gone).
+            bool found = SoundService.Exists(sound.Sound);
+            int icon = LogicalToDeviceUnits(18);
+            capsWidth += icon + LogicalToDeviceUnits(4);
+            Draw.Glyph(g, found ? Glyphs.Sound : Glyphs.Warning, 8.5f, found ? p.TextSecondary : p.Warning,
+                new Rectangle(content.Right - capsWidth, content.Y, icon, line));
+        }
         TextRenderer.DrawText(g, DisplayName(profile), _itemTitleFont,
             new Rectangle(content.X, content.Y, content.Width - capsWidth - LogicalToDeviceUnits(10), line), text, fill, ItemText);
         DrawDevice(g, Glyphs.Speaker, profile.Output, _outputs, new Rectangle(content.X, content.Y + line, content.Width, line), fill);
@@ -663,6 +837,7 @@ internal sealed class SettingsForm : ThemedForm
         if (disposing)
         {
             _host.HotkeyProblemsChanged -= OnHostProblemsChanged;
+            SystemEvents.DisplaySettingsChanged -= OnDisplaysChanged;
             _saveTimer.Dispose();
             _itemTitleFont.Dispose();
             _keycapFont.Dispose();

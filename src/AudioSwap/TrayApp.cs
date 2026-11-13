@@ -17,6 +17,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
     const int CycleHotkeyId = 0x7000, ProbeHotkeyId = 0x7FFF;
 
     readonly AudioDeviceService _audio = new();
+    readonly SoundService _sounds = new();
     readonly HotkeyManager _hotkeys = new();
     readonly OsdWindow _osd = new();
     readonly ContextMenuStrip _menu = new() { ShowItemToolTips = true };
@@ -53,6 +54,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
         };
 
         _hotkeys.Pressed += OnHotkey;
+        _sounds.Failed += (sound, reason) => Notice($"Couldn't play {SoundService.DisplayName(sound)}", reason);
         _audio.DevicesChanged += (_, _) =>
         {
             UpdateTrayText();
@@ -92,6 +94,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
     void ApplyProfile(Profile profile)
     {
         var rows = new List<OsdRow>(2);
+        AudioDevice? output = null;
         foreach (var flow in new[] { DeviceFlow.Output, DeviceFlow.Input })
         {
             var target = flow == DeviceFlow.Output ? profile.Output : profile.Input;
@@ -113,6 +116,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
             {
                 _audio.SetDefault(device.Id, profile.IncludeCommunications);
                 rows.Add(new OsdRow(flow, OsdRowState.Switched, device.Name));
+                if (flow == DeviceFlow.Output) output = device;
             }
             catch (Exception ex)
             {
@@ -121,8 +125,17 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
             }
         }
 
+        // The output's own sound, every time it's picked, even if it was already the default:
+        // that's what wakes speakers that sleep.
+        string? warning = null;
+        if (output is not null && _config.SoundFor(new DeviceRef(output.Id, output.Name), _audio.GetDevices(DeviceFlow.Output)) is { } sound)
+        {
+            if (SoundService.Exists(sound.Sound)) _sounds.Play(sound.Sound, output.Id, sound.Volume);
+            else warning = $"Sound not found: {SoundService.DisplayName(sound.Sound)}";
+        }
+
         var title = string.IsNullOrWhiteSpace(profile.Name) ? "Audio switched" : profile.Name;
-        ShowPopup(new OsdContent(title, null, rows));
+        ShowPopup(new OsdContent(title, null, rows, Warning: warning));
         UpdateTrayText();
     }
 
@@ -177,11 +190,11 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
             _ => false,
         };
         // Problems linger a little longer so they're noticed without being in the way.
-        if (show) _osd.ShowContent(content, _config.PopupPosition, content.HasProblem ? Math.Max(_config.PopupSeconds, 4) : _config.PopupSeconds);
+        if (show) _osd.ShowContent(content, _config.PopupPosition, _config.PopupDisplay, content.HasProblem ? Math.Max(_config.PopupSeconds, 4) : _config.PopupSeconds);
     }
 
     void Notice(string title, string message) =>
-        _osd.ShowContent(OsdContent.Notice(title, message), _config.PopupPosition, 6);
+        _osd.ShowContent(OsdContent.Notice(title, message), _config.PopupPosition, _config.PopupDisplay, 6);
 
     public void PreviewPopup(AppConfig settings, bool withProblem)
     {
@@ -191,8 +204,12 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
             ? [new(DeviceFlow.Output, OsdRowState.Unchanged, output), new(DeviceFlow.Input, OsdRowState.Missing, "Headset Microphone (USB Audio)")]
             : [new(DeviceFlow.Output, OsdRowState.Switched, output), new(DeviceFlow.Input, OsdRowState.Switched, input)];
         var title = withProblem ? "Preview: device not plugged in" : "Preview";
-        _osd.ShowContent(new OsdContent(title, null, rows), settings.PopupPosition, settings.PopupSeconds);
+        _osd.ShowContent(new OsdContent(title, null, rows), settings.PopupPosition, settings.PopupDisplay, settings.PopupSeconds);
     }
+
+    /// <summary>Plays a device's sound on that device (or the current output, if it isn't connected) without switching.</summary>
+    public void PreviewSound(DeviceSound sound) =>
+        _sounds.Play(sound.Sound, _audio.Resolve(sound.Device, DeviceFlow.Output)?.Id, sound.Volume);
 
     #endregion
 
@@ -407,6 +424,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
         _tray.Dispose();
         _hotkeys.Dispose();
         _osd.Dispose();
+        _sounds.Dispose();
         _menu.Dispose();
         _warningImage.Dispose();
         _audio.Dispose();

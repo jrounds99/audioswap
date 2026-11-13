@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Text;
@@ -17,6 +18,9 @@ namespace AudioSwap;
 ///   --render-popups &lt;file&gt;  render sample popups to a PNG
 ///   --render-window &lt;file&gt;  render the settings window to a PNG
 ///   --render-menu &lt;file&gt;    render a sample tray menu to a PNG
+///   --list-displays &lt;file&gt;  write connected displays as the popup's Display setting names them
+///   --render-sounds &lt;folder&gt; write the built-in sounds as WAV files, with a loudness report
+///   --check-sound &lt;file&gt; &lt;sound&gt;  decode a sound (builtin:id or a file) and play it silently on the default output
 /// </summary>
 internal static class DevTools
 {
@@ -25,7 +29,7 @@ internal static class DevTools
         exitCode = 0;
         if (args.Length < 2) return false;
         var path = Path.GetFullPath(args[1]);
-        if (args.Length >= 3) Theme.Force(dark: args[2].Equals("dark", StringComparison.OrdinalIgnoreCase));
+        if (args.Length >= 3 && args[2].ToLowerInvariant() is "light" or "dark") Theme.Force(dark: args[2].Equals("dark", StringComparison.OrdinalIgnoreCase));
         switch (args[0].ToLowerInvariant())
         {
             case "--list-devices": exitCode = DeviceReport(path, selfTest: false); return true;
@@ -33,6 +37,9 @@ internal static class DevTools
             case "--render-popups": exitCode = RenderPopups(path); return true;
             case "--render-window": exitCode = RenderWindow(path); return true;
             case "--render-menu": exitCode = RenderMenu(path); return true;
+            case "--list-displays": exitCode = ListDisplays(path); return true;
+            case "--render-sounds": exitCode = RenderSounds(path); return true;
+            case "--check-sound" when args.Length >= 3: exitCode = CheckSound(path, args[2]); return true;
             default: return false;
         }
     }
@@ -92,7 +99,7 @@ internal static class DevTools
             [
                 new(DeviceFlow.Output, OsdRowState.Missing, "Headphones (USB Audio)"),
                 new(DeviceFlow.Input, OsdRowState.Switched, "Headset Microphone (USB Audio)"),
-            ]),
+            ]) { Warning = "Sound not found: wake-up.mp3" },
             OsdContent.Notice("Tray icon hidden", "Your hotkeys still work. Open AudioSwap again to bring the icon back."),
         ];
 
@@ -144,17 +151,17 @@ internal static class DevTools
             {
                 new Profile
                 {
-                    Name = "Gaming",
+                    Name = "Desk speakers",
                     Hotkey = new Hotkey(HotkeyModifiers.Ctrl | HotkeyModifiers.Alt, Keys.D1),
-                    Output = Ref(outputs[0]),
-                    Input = Ref(inputs[0]),
+                    Output = Ref(outputs[1]),
+                    Input = Ref(inputs[1]),
                 },
                 new Profile
                 {
-                    Name = "Desk speakers",
+                    Name = "Gaming",
                     Hotkey = new Hotkey(HotkeyModifiers.Ctrl | HotkeyModifiers.Alt, Keys.D2),
-                    Output = Ref(outputs[1]),
-                    Input = Ref(inputs[1]),
+                    Output = Ref(outputs[0]),
+                    Input = Ref(inputs[0]),
                 },
                 new Profile
                 {
@@ -164,6 +171,7 @@ internal static class DevTools
                 },
             },
             CycleHotkey = new Hotkey(HotkeyModifiers.Ctrl | HotkeyModifiers.Alt, Keys.Oemtilde),
+            DeviceSounds = { new DeviceSound { Device = Ref(outputs[1]), Sound = BuiltInSounds.All[0].Ref } },
         };
 
         using var form = new SettingsForm(new NullHost(), flow => flow == DeviceFlow.Output ? outputs : inputs, config)
@@ -218,6 +226,90 @@ internal static class DevTools
         return 0;
     }
 
+    static int ListDisplays(string path)
+    {
+        var report = new StringBuilder();
+        foreach (var display in Displays.GetAll())
+            report.AppendLine($"{display.Name}  {display.Screen.DeviceName}  {display.Screen.Bounds}  [{display.Id}]");
+        File.WriteAllText(path, report.ToString());
+        return 0;
+    }
+
+    /// <summary>Writes each built-in sound as a 16-bit WAV, with its loudness every quarter second.</summary>
+    static int RenderSounds(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var report = new StringBuilder();
+        foreach (var sound in BuiltInSounds.All)
+        {
+            var clip = BuiltInSounds.Render(sound);
+            WriteWav(Path.Combine(folder, sound.Id + ".wav"), clip);
+            report.AppendLine($"{sound.Name}: {clip.Seconds:0.00}s, peak {Db(clip.Samples.Max(MathF.Abs)):0.0} dBFS");
+            report.AppendLine("  dB RMS per 0.25s: " + string.Join(" ", Loudness(clip, 0.25).Select(db => $"{db:0}")));
+        }
+        File.WriteAllText(Path.Combine(folder, "report.txt"), report.ToString());
+        return 0;
+    }
+
+    /// <summary>Decodes a sound and plays it at zero volume: the whole path runs without making a sound.</summary>
+    static int CheckSound(string path, string sound)
+    {
+        if (BuiltInSounds.Find(sound) is null) sound = Path.GetFullPath(sound);
+        var report = new StringBuilder();
+        int exitCode = 0;
+        try
+        {
+            using var sounds = new SoundService();
+            var watch = Stopwatch.StartNew();
+            var clip = sounds.Load(sound);
+            report.AppendLine($"decoded {SoundService.DisplayName(sound)}: {clip.SampleRate} Hz, {clip.Seconds:0.00}s, " +
+                $"peak {Db(clip.Samples.Max(MathF.Abs)):0.0} dBFS, in {watch.ElapsedMilliseconds} ms");
+            watch.Restart();
+            SoundService.Render(clip, null, 0, CancellationToken.None);
+            report.AppendLine($"played silently on the default output in {watch.ElapsedMilliseconds} ms");
+        }
+        catch (Exception ex)
+        {
+            exitCode = 1;
+            report.AppendLine($"FAILED: {SoundService.Describe(ex)} ({ex.GetType().Name}: {ex.Message})");
+        }
+        File.WriteAllText(path, report.ToString());
+        return exitCode;
+    }
+
+    static double Db(double amplitude) => 20 * Math.Log10(Math.Max(amplitude, 1e-6));
+
+    static IEnumerable<double> Loudness(SoundClip clip, double window)
+    {
+        int size = (int)(clip.SampleRate * window) * 2;
+        for (int start = 0; start < clip.Samples.Length; start += size)
+        {
+            int end = Math.Min(clip.Samples.Length, start + size);
+            double sum = 0;
+            for (int i = start; i < end; i++) sum += clip.Samples[i] * clip.Samples[i];
+            yield return Db(Math.Sqrt(sum / (end - start)));
+        }
+    }
+
+    static void WriteWav(string path, SoundClip clip)
+    {
+        using var writer = new BinaryWriter(File.Create(path));
+        int dataBytes = clip.Samples.Length * 2;
+        writer.Write("RIFF"u8);
+        writer.Write(36 + dataBytes);
+        writer.Write("WAVEfmt "u8);
+        writer.Write(16);
+        writer.Write((short)1); // PCM
+        writer.Write((short)2);
+        writer.Write(clip.SampleRate);
+        writer.Write(clip.SampleRate * 4);
+        writer.Write((short)4);
+        writer.Write((short)16);
+        writer.Write("data"u8);
+        writer.Write(dataBytes);
+        foreach (var sample in clip.Samples) writer.Write((short)Math.Round(Math.Clamp(sample, -1f, 1f) * 32767));
+    }
+
     sealed class NullHost : ISettingsHost
     {
         public IReadOnlyDictionary<int, string> HotkeyProblems { get; } = new Dictionary<int, string>();
@@ -227,6 +319,7 @@ internal static class DevTools
         public bool IsHotkeyFree(Hotkey hotkey) => true;
         public void TryProfile(Profile profile) { }
         public void PreviewPopup(AppConfig settings, bool withProblem) { }
+        public void PreviewSound(DeviceSound sound) { }
         public void Quit() { }
     }
 }
