@@ -50,7 +50,10 @@
 Requires Windows 10 or 11 and the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
 (or build it self-contained, below).
 
-Build a single `AudioSwap.exe` with the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0):
+**Download** `AudioSwap.exe` from the [latest release](https://github.com/jrounds99/audioswap/releases/latest)
+and run it. It isn't code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+
+Or build it yourself with the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0):
 
 ```powershell
 dotnet publish src/AudioSwap -c Release -r win-x64 --no-self-contained -p:PublishSingleFile=true -o publish
