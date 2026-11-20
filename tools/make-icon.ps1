@@ -26,13 +26,40 @@ function RoundedRect([double]$x, [double]$y, [double]$w, [double]$h, [double]$r)
     $p
 }
 
-# Two clockwise arrows chasing each other around an equalizer: "swap audio".
-# Geometry is in a 256-unit square; $u scales it to the real size. Tray sizes drop
-# the equalizer and enlarge the arrows, which is all 16px can carry.
+# A polygon with softly rounded corners, as one path (so translucent fills don't double up).
+function RoundedPolygon([double[][]]$points, [double]$radius, [double]$u, [double]$dy) {
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $n = $points.Count
+    for ($i = 0; $i -lt $n; $i++) {
+        $p = $points[$i]; $prev = $points[($i + $n - 1) % $n]; $next = $points[($i + 1) % $n]
+        $corner = @()
+        foreach ($q in $prev, $next) {
+            $vx = $q[0] - $p[0]; $vy = $q[1] - $p[1]; $len = [Math]::Sqrt($vx * $vx + $vy * $vy)
+            $k = [Math]::Min($radius, $len / 2) / $len
+            $corner += New-Object System.Drawing.PointF([float](($p[0] + $vx * $k) * $u), [float](($p[1] + $vy * $k) * $u + $dy))
+        }
+        $tip = New-Object System.Drawing.PointF([float]($p[0] * $u), [float]($p[1] * $u + $dy))
+        $path.AddBezier($corner[0], $tip, $tip, $corner[1])
+    }
+    $path.CloseFigure()
+    $path
+}
+
+# Two clockwise arrows chasing each other around a speaker: "swap audio".
+# Geometry is in a 256-unit square; $u scales it to the real size. Smaller sizes drop
+# sound waves and thicken everything, so the tray icon still reads at 16px.
 function Draw-Mark($g, [double]$u, [int]$S, [System.Drawing.Color]$color, [double]$dy) {
-    if ($S -ge 48)     { $r = 78; $stroke = 19; $start = 206; $sweep = 94; $aw = 48; $ah = 34; $bw = 15; $gap = 9;  $heights = @(30, 58, 86, 58, 30) }
-    elseif ($S -ge 24) { $r = 82; $stroke = 24; $start = 204; $sweep = 92; $aw = 60; $ah = 40; $bw = 22; $gap = 15; $heights = @(40, 80, 40) }
-    else               { $r = 74; $stroke = 38; $start = 198; $sweep = 96; $aw = 104; $ah = 66; $heights = @() }
+    # Ring: radius, stroke, arc start/sweep, arrowhead width/length.
+    # Speaker: box width/height, cone length/mouth height, corner radius, offset left of centre.
+    # Waves: radii around the cone mouth, and their stroke.
+    if ($S -ge 48)     { $r = 84; $stroke = 18; $start = 206; $sweep = 94; $aw = 48; $ah = 34
+                         $bw = 24; $bh = 40; $cw = 30; $ch = 84; $corner = 6; $shift = 46; $waves = @(22, 44); $ws = 12 }
+    elseif ($S -ge 24) { $r = 86; $stroke = 22; $start = 204; $sweep = 92; $aw = 58; $ah = 40
+                         $bw = 30; $bh = 50; $cw = 32; $ch = 100; $corner = 7; $shift = 44; $waves = @(24); $ws = 16 }
+    else               { # Arrowheads at the top and bottom, clear of the speaker's cone.
+                         $r = 86; $stroke = 28; $start = 174; $sweep = 92; $aw = 76; $ah = 50
+                         $bw = 30; $bh = 46; $cw = 28; $ch = 84; $corner = 8; $shift = 29; $waves = @(); $ws = 0 }
+    $waveAngle = if ($S -ge 48) { 44 } else { 38 }
     $c = 128
 
     $pen = New-Object System.Drawing.Pen($color, [float]($stroke * $u))
@@ -56,13 +83,24 @@ function Draw-Mark($g, [double]$u, [int]$S, [System.Drawing.Color]$color, [doubl
     }
     $pen.Dispose()
 
-    $total = $heights.Count * $bw + ($heights.Count - 1) * $gap
-    $x = $c - $total / 2
-    foreach ($h in $heights) {
-        $bar = RoundedRect ($x * $u) (($c - $h / 2) * $u + $dy) ($bw * $u) ($h * $u) ($bw * $u / 2)
-        $g.FillPath($brush, $bar)
-        $bar.Dispose()
-        $x += $bw + $gap
+    # Speaker: a box with a flared cone, set left of centre to leave room for its waves.
+    $left = $c - $shift; $mouth = $left + $bw + $cw
+    $outline = @(
+        @($left, ($c - $bh / 2)), @(($left + $bw), ($c - $bh / 2)), @($mouth, ($c - $ch / 2)),
+        @($mouth, ($c + $ch / 2)), @(($left + $bw), ($c + $bh / 2)), @($left, ($c + $bh / 2)))
+    $speaker = RoundedPolygon $outline $corner $u $dy
+    $g.FillPath($brush, $speaker)
+    $speaker.Dispose()
+
+    if ($waves.Count -gt 0) {
+        $wave = New-Object System.Drawing.Pen($color, [float]($ws * $u))
+        $wave.StartCap = $wave.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $wx = $mouth - 6
+        foreach ($wr in $waves) {
+            $wr += $ws / 2 + 6
+            $g.DrawArc($wave, [float](($wx - $wr) * $u), [float](($c - $wr) * $u + $dy), [float](2 * $wr * $u), [float](2 * $wr * $u), [float](-$waveAngle), [float](2 * $waveAngle))
+        }
+        $wave.Dispose()
     }
     $brush.Dispose()
 }
