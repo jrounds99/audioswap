@@ -10,7 +10,7 @@
     <ApplicationIcon>Assets\audioswap.ico</ApplicationIcon>
     <AssemblyName>AudioSwap</AssemblyName>
     <RootNamespace>AudioSwap</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>AudioSwap</Product>
     <Description>Hotkeys for switching Windows audio input and output devices.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

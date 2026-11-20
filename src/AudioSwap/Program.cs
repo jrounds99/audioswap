@@ -20,6 +20,9 @@ internal static class Program
 
         bool Has(string flag) => args.Contains(flag, StringComparer.OrdinalIgnoreCase);
 
+        // Switched off in Task Manager's Startup apps: respect that for the sign-in task too.
+        if (Has("--startup") && StartupManager.IsTurnedOffInWindows) return 0;
+
         using var instance = new Mutex(initiallyOwned: true, InstanceMutexName, out bool isFirstInstance);
         using var showWindow = new EventWaitHandle(false, EventResetMode.AutoReset, ShowWindowEventName);
         using var quit = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
@@ -30,6 +33,8 @@ internal static class Program
                 quit.Set();
                 return 0;
             }
+            // The Run entry and the sign-in task both fire at sign-in; the second one just leaves.
+            if (Has("--startup")) return 0;
             // Already running (maybe with its tray icon hidden): bring its window up instead.
             AllowSetForegroundWindow(ASFW_ANY);
             showWindow.Set();
