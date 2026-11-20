@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using AudioSwap.Config;
 
 namespace AudioSwap.Audio;
 
@@ -126,10 +127,15 @@ internal sealed class SoundService : IDisposable
         try
         {
             var clip = Load(sound);
-            if (!token.IsCancellationRequested) Render(clip, deviceId, gain, token);
+            if (token.IsCancellationRequested) return;
+            var watch = Stopwatch.StartNew();
+            Render(clip, deviceId, gain, token);
+            AppLog.Write($"sound: {DisplayName(sound)} {(token.IsCancellationRequested ? "cut short by the next one" : "played")} " +
+                $"({watch.Elapsed.TotalSeconds:0.0}s of {clip.Seconds:0.0}s, gain {gain:0.00})");
         }
         catch (Exception ex)
         {
+            AppLog.Write($"sound: {DisplayName(sound)} failed: {Describe(ex)} ({ex.Message})");
             Trace.WriteLine($"AudioSwap: playing {sound} failed: {ex}");
             var reason = Describe(ex);
             _ui?.Post(_ => Failed?.Invoke(sound, reason), null);

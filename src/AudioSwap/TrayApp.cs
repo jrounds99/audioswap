@@ -129,13 +129,16 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
         // The output's own sound, every time it's picked, even if it was already the default:
         // that's what wakes speakers that sleep.
         string? warning = null;
-        if (output is not null && _config.SoundFor(new DeviceRef(output.Id, output.Name), _audio.GetDevices(DeviceFlow.Output)) is { } sound)
+        var sound = output is null ? null : _config.SoundFor(new DeviceRef(output.Id, output.Name), _audio.GetDevices(DeviceFlow.Output));
+        if (sound is not null)
         {
-            if (SoundService.Exists(sound.Sound)) _sounds.Play(sound.Sound, output.Id, sound.Volume);
+            if (SoundService.Exists(sound.Sound)) _sounds.Play(sound.Sound, output!.Id, sound.Volume);
             else warning = $"Sound not found: {SoundService.DisplayName(sound.Sound)}";
         }
 
         var title = string.IsNullOrWhiteSpace(profile.Name) ? "Audio switched" : profile.Name;
+        AppLog.Write($"switch \"{title}\": " + string.Join("; ", rows.Select(r => $"{r.Flow} {r.State} {r.DeviceName}")) + "; " +
+            (sound is null ? "no sound for this output" : $"sound {SoundService.DisplayName(sound.Sound)} at {sound.Volume}%{(warning is null ? "" : " (file missing)")}"));
         ShowPopup(new OsdContent(title, null, rows, Warning: warning));
         UpdateTrayText();
     }
