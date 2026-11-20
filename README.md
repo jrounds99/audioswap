@@ -119,7 +119,7 @@ sound file that's missing.
 | **Duration** | How long the popup stays, from 1 to 10 seconds. Popups about a problem stay at least 4 seconds. |
 | **Preview** | Shows a sample popup with your settings. Click it again for a sample with a missing device. |
 | **Cycle hotkey** | An optional hotkey that applies the next profile in the list, wrapping around at the end. It carries on from the last profile applied, or from the one that matches your current devices. |
-| **Start with Windows** | Starts AudioSwap quietly in the tray when you sign in, in two ways, since Windows occasionally skips a startup entry: your startup apps list (the per-user *Run* registry key, shown in Task Manager) and a sign-in task in Task Scheduler named *AudioSwap (your user name)*. Whichever starts second exits straight away, and neither needs admin rights. Switching AudioSwap off in Task Manager's **Startup apps** is respected by both; switching this on again clears it. |
+| **Start with Windows** | Starts AudioSwap quietly in the tray when you sign in. It adds AudioSwap to your startup apps (the per-user *Run* registry key, which Task Manager's **Startup apps** lists), with no admin rights or scheduled tasks. |
 | **Minimize to tray** | Minimizing the window hides it to the tray instead of the taskbar. It's only available while the tray icon is shown. |
 | **Show icon in the system tray** | Hides or shows the icon. Hotkeys keep working while it's hidden. Run AudioSwap again to get back to this window. |
 
@@ -225,7 +225,7 @@ Run `AudioSwap.exe --list-devices devices.txt` to get your device IDs and names,
 | Option | What it does |
 | --- | --- |
 | *(none)* | Start, or bring up the window if AudioSwap is already running. |
-| `--startup` | Start quietly in the tray. This is what *Start with Windows* uses. If AudioSwap is already running, or was switched off in Task Manager's Startup apps, it exits without doing anything. |
+| `--startup` | Start quietly in the tray. This is what *Start with Windows* uses. If AudioSwap is already running, it exits without doing anything. |
 | `--quit` | Close the running instance. |
 | `--list-devices <file>` | Write connected devices, their IDs and the current defaults. |
 | `--self-test <file>` | Same, plus re-apply the current defaults (a no-op) to check switching works. |
@@ -241,6 +241,17 @@ None of the file-writing options change your audio setup.
 <p align="center">
   <img src="docs/menu-dark.png" width="240" alt="Tray menu">
 </p>
+
+## Troubleshooting
+
+- **What happened?** AudioSwap keeps a short log next to its settings, at `%APPDATA%\AudioSwap\audioswap.log`.
+  It records each start (version and how it was started), whether the settings loaded or saved,
+  and any crash.
+- **Settings or Start with Windows don't stick.** Start AudioSwap yourself, from File Explorer or
+  the Start menu. If another *packaged* app launches it (an app installed from the Microsoft Store
+  or as MSIX, such as some AI assistants and launchers), Windows can quietly redirect its settings
+  and startup entry into that app's private storage. AudioSwap then looks fine while it runs, but
+  nothing it saves reaches your real settings.
 
 ## How it works
 

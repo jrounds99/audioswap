@@ -28,16 +28,22 @@ internal static class ConfigStore
     public static AppConfig? Load(out string? error)
     {
         error = null;
-        if (!File.Exists(FilePath)) return null;
+        if (!File.Exists(FilePath)) {
+            AppLog.Write($"settings: {FilePath} not found");
+            return null;
+        }
         try
         {
-            return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(FilePath), Options) ?? new AppConfig();
+            var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(FilePath), Options) ?? new AppConfig();
+            AppLog.Write($"settings: loaded {FilePath} ({config.Profiles.Count} profile(s))");
+            return config;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             var backup = Path.Combine(Folder, $"config.broken-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             try { File.Move(FilePath, backup); } catch (IOException) { }
             error = $"config.json couldn't be read ({ex.Message}). It was saved as {Path.GetFileName(backup)} and AudioSwap started fresh.";
+            AppLog.Write($"settings: {error}");
             return new AppConfig();
         }
     }
@@ -48,6 +54,7 @@ internal static class ConfigStore
         var temp = FilePath + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(config, Options));
         File.Move(temp, FilePath, overwrite: true);
+        AppLog.Write($"settings: saved ({config.Profiles.Count} profile(s))");
     }
 
     public static AppConfig Clone(AppConfig config) =>

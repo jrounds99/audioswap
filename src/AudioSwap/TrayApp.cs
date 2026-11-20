@@ -36,6 +36,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
     public TrayApp(AppConfig? config, string? loadError, bool showWindow)
     {
         bool firstRun = config is null;
+        if (firstRun) AppLog.Write("settings: none found, starting with a starter profile");
         _config = config ?? CreateStarterConfig();
         if (firstRun) TrySave();
 
@@ -283,6 +284,7 @@ internal sealed class TrayApp : ApplicationContext, ISettingsHost
         try { ConfigStore.Save(_config); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Write($"settings: save failed: {ex.Message}");
             Notice("Couldn't save settings", ex.Message);
         }
     }

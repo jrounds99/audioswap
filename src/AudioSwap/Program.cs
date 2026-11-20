@@ -19,9 +19,8 @@ internal static class Program
         if (DevTools.TryRun(args, out int exitCode)) return exitCode;
 
         bool Has(string flag) => args.Contains(flag, StringComparer.OrdinalIgnoreCase);
-
-        // Switched off in Task Manager's Startup apps: respect that for the sign-in task too.
-        if (Has("--startup") && StartupManager.IsTurnedOffInWindows) return 0;
+        AppLog.Write($"start {Application.ProductVersion} [{string.Join(' ', args)}] from {Environment.ProcessPath}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => AppLog.Write($"crash: {e.ExceptionObject}");
 
         using var instance = new Mutex(initiallyOwned: true, InstanceMutexName, out bool isFirstInstance);
         using var showWindow = new EventWaitHandle(false, EventResetMode.AutoReset, ShowWindowEventName);
@@ -33,8 +32,12 @@ internal static class Program
                 quit.Set();
                 return 0;
             }
-            // The Run entry and the sign-in task both fire at sign-in; the second one just leaves.
-            if (Has("--startup")) return 0;
+            // A second quiet start just leaves; any other launch brings up the window.
+            if (Has("--startup"))
+            {
+                AppLog.Write("already running, exiting");
+                return 0;
+            }
             // Already running (maybe with its tray icon hidden): bring its window up instead.
             AllowSetForegroundWindow(ASFW_ANY);
             showWindow.Set();
@@ -57,6 +60,7 @@ internal static class Program
         showRegistration.Unregister(null);
         quitRegistration.Unregister(null);
         Theme.Unwatch();
+        AppLog.Write("exit");
         return 0;
     }
 
